@@ -4,7 +4,10 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 from task_extractor import extract_task
+from database import (save_task, get_all_tasks, update_task_priority,delete_task,create_tasks_table)
 
+
+create_tasks_table()
 load_dotenv()
 
 api_key = os.getenv("OPENROUTER_API_KEY")
@@ -159,16 +162,119 @@ with task_tab:
                     task = extract_task(task_text, hours_per_day, days_per_week)
 
                     # Store validated result
-                    st.session_state.extracted_task = (
-                        task.model_dump()
-                    )
+               
+                    st.session_state.extracted_task = task.model_dump(mode="json")
+                    st.session_state.task_saved = False
+                    st.session_state.saved_task_id = None
+
 
                 except Exception as e:
                     st.error(f"Extraction failed: {e}")
 
     # Display saved result
+        
     if st.session_state.get("extracted_task") is not None:
 
-        st.success("Task extracted successfully!")
-
         st.json(st.session_state.extracted_task)
+
+        if st.session_state.get("task_saved"):
+            st.success(
+                f"Task saved! ID: {st.session_state.saved_task_id}"
+            )
+
+        elif st.button("💾 Save Task"):
+            task_id = save_task(
+                st.session_state.extracted_task
+            )
+
+            st.session_state.task_saved = True
+            st.session_state.saved_task_id = task_id
+
+            st.success(f"Task saved! ID: {task_id}")
+    
+    # Display all saved tasks
+    
+    # Display and manage saved tasks
+    st.divider()
+    st.subheader("📚 My Saved Tasks")
+
+    tasks = get_all_tasks()
+
+    if tasks:
+
+        st.subheader("✏️ Update Task Priority")
+
+        # Create options using each task's ID
+        task_options = {
+            f"{task['id']} - {task['task']}": task['id']
+            for task in tasks
+        }
+
+        selected_task = st.selectbox(
+            "Choose a task",
+            options=list(task_options.keys())
+        )
+
+        new_priority = st.selectbox(
+            "New priority",
+            options=["low", "medium", "high"]
+        )
+
+        if st.button("Update Priority"):
+
+            task_id = task_options[selected_task]
+
+            updated = update_task_priority(
+                task_id,
+                new_priority
+            )
+
+            if updated:
+                st.success("Task updated successfully!")
+            else:
+                st.warning("Task not found.")
+        
+       
+
+        
+        # Display tasks with individual delete buttons
+        tasks = get_all_tasks()
+
+        st.subheader("📚 My Saved Tasks")
+
+        # Table headers
+        headers = st.columns([1, 4, 2, 2, 2, 1])
+
+        for col, title in zip(
+            headers,
+            ["ID", "Task", "Priority", "Deadline", "Hours", "Delete"]
+        ):
+            col.write(f"**{title}**")
+
+        # Task rows
+        for task in tasks:
+
+            cols = st.columns([1, 4, 2, 2, 2, 1])
+
+            cols[0].write(task["id"])
+            cols[1].write(task["task"])
+            cols[2].write(task["priority"])
+            cols[3].write(task["deadline"] or "-")
+            cols[4].write(
+                task["estimated_hours"]
+                if task["estimated_hours"] is not None
+                else "-"
+                )
+
+            if cols[5].button(
+                "🗑️",
+                key=f"delete_{task['id']}"
+            ):
+                delete_task(task["id"])
+                st.rerun()
+
+
+    else:
+        st.info("No saved tasks yet.")
+
+
